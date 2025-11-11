@@ -1,0 +1,6 @@
+/.venv
+/build
+/data
+/db.py
+/dist
+/main.spec
