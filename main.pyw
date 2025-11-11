@@ -11,6 +11,7 @@ notes = db.table("Notes")
 tags = db.table("Tags")
 
 def getTags(special_option = None, exclude_list : list = None):
+    '''Function for returning list of Dropdown options for various dropdown controls'''
     new_tag_list = []
     if special_option:
         new_tag_list.extend(special_option)
@@ -126,7 +127,7 @@ class NoteEditor(ft.AlertDialog):
         self.multimedia = ft.Column(expand=True)
         self.new_tag = NewTag(page, self)
         self.tags = ft.Row(expand=True, scroll=ft.ScrollMode.ALWAYS)
-        # Loading all previous tags 
+        # Loading all previous elements 
         self.exclude_tags = []
         if multimedia:
             for media in multimedia:
@@ -175,10 +176,12 @@ class NoteEditor(ft.AlertDialog):
         self.page.close(self)
 
     def delete_self(self, e):
+        '''Helper for images to be able to delete themselves'''
         self.multimedia.controls.remove(e.control.parent)
         self.multimedia.update()
 
     def pickedImage(self, e : ft.FilePickerResultEvent):
+        '''Function for when user has picked an image'''
         file = e.files[0]
         file_encoded = ""
         with open(file.path, "rb") as img_file:
@@ -187,6 +190,7 @@ class NoteEditor(ft.AlertDialog):
         self.multimedia.update()
 
     def promptImage(self, e):
+        '''Function to open the file dialog'''
         self.image_dialog.pick_files(dialog_title="Open Image", file_type=ft.FilePickerFileType.IMAGE, allow_multiple=False)
 
     def addTag(self, e : ft.ControlEvent):
@@ -214,6 +218,7 @@ def main(page : ft.Page):
     '''Main function that runs whenever the application starts'''
     # GUI functions for later use
     def swapTheme(e = None):
+        '''Change the theme of application'''
         if page.theme_mode == ft.ThemeMode.LIGHT:
             page.theme_mode = ft.ThemeMode.DARK
         else:
