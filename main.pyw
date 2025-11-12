@@ -3,12 +3,7 @@ import flet as ft
 from datetime import date
 import re
 import base64
-
-db = TinyDB("data")
-qry = Query()
-
-notes = db.table("Notes")
-tags = db.table("Tags")
+import os 
 
 def getTags(special_option = None, exclude_list : list = None):
     '''Function for returning list of Dropdown options for various dropdown controls'''
@@ -28,6 +23,28 @@ def getTags(special_option = None, exclude_list : list = None):
         tag_options.append(ft.DropdownOption(tag))
     return tag_options
 
+def getDBs():
+    '''Retrieve all databases from current folder'''
+    dbs_found = []
+    for file in os.listdir(os.getcwd()):
+        if (file[-3:] == ".db"):
+            dbs_found.append(file[:-3])
+    return dbs_found
+
+dbs = getDBs()
+current_db = "data"
+if len(dbs) > 0:
+    current_db = dbs[0]
+    db = TinyDB(dbs[0]+".db")
+else:
+    db = TinyDB("data.db")
+
+qry = Query()
+
+notes = db.table("Notes")
+tags = db.table("Tags")
+
+
 ############################################################################################################################
 
 class TagsEditor(ft.AlertDialog):
@@ -46,12 +63,14 @@ class TagsEditor(ft.AlertDialog):
             self.content.controls.append(ft.Row([ft.IconButton(icon=ft.Icons.REMOVE, on_click=self.removeTag), ft.TextField(value=tag_document["tag"], expand=True)]))
         self.content.controls.append(ft.CupertinoButton("New Tag", on_click=self.addTag, icon=ft.Icons.ADD))
 
-    def cancel(self, e):
-        '''Cancel all changes'''
+    def cancel(self, e : ft.ControlEvent = None):
+        '''Cancel and close the page'''
         self.page.close(self)
     
-    def save(self, e):
+    def save(self, e : ft.ControlEvent = None):
         '''Commit and save all changes'''
+        e.control.diabled = True
+        e.control.update()
         all_tags = tags.all()
         # Remove all old tags
         documents_to_remove = []
@@ -67,12 +86,12 @@ class TagsEditor(ft.AlertDialog):
         self.note_update()
         self.page.close(self)
     
-    def removeTag(self, e):
+    def removeTag(self, e : ft.ControlEvent = None):
         '''Remove tag from the local list'''
         self.content.controls.remove(e.control.parent)
         self.content.update()
     
-    def addTag(self, e):
+    def addTag(self, e : ft.ControlEvent = None):
         '''Add new tag to local list'''
         self.content.controls.insert(len(self.content.controls)-1, ft.Row([ft.IconButton(icon=ft.Icons.REMOVE, on_click=self.removeTag), ft.TextField(value="", expand=True)]))
         self.content.update()
@@ -89,15 +108,19 @@ class NewTag(ft.AlertDialog):
         self.title = ft.Text("New Tag")
         # Setup the control
         self.content = ft.TextField(label="New Tag Name")
-        self.actions = [ft.Button("Create New", on_click=self.create), ft.Button("Cancel", on_click=self.cancel)]
+        self.actions = [ft.Button("Create New", on_click=self.create), ft.Button("Close", on_click=self.cancel)]
     
-    def cancel(self, e):
+    def cancel(self, e : ft.ControlEvent = None):
         '''Cancel all changes'''
         if self.reopener:
             self.page.open(self.reopener)
+        else:
+            self.page.close(self)
     
-    def create(self, e):
+    def create(self, e : ft.ControlEvent = None):
         '''Commit and create the new tag in database'''
+        e.control.diabled = True
+        e.control.update()
         tags.insert({"tag": self.content.value})
         if self.reopener:
             self.page.open(self.reopener)
@@ -106,6 +129,31 @@ class NewTag(ft.AlertDialog):
             self.page.close(self)
         self.content.value = ""
         self.content.update()
+
+############################################################################################################################
+
+class NewNotebook(ft.AlertDialog):
+    '''Simple version of Tag Editor allowing only to add a single Tag'''
+    def __init__(self, page, notebook_function):
+        super().__init__()
+        # Transfer variables
+        self.page = page
+        self.notebook_function = notebook_function
+        self.title = ft.Text("New Notebook")
+        # Setup the control
+        self.content = ft.TextField(label="New Notebook Name")
+        self.actions = [ft.Button("Create New", on_click=self.create), ft.Button("Close", on_click=self.cancel)]
+    
+    def cancel(self, e : ft.ControlEvent = None):
+        '''Cancel all changes'''
+        self.page.close(self)
+    
+    def create(self, e : ft.ControlEvent = None):
+        '''Commit and create the new notebook'''
+        e.control.diabled = True
+        e.control.update()
+        self.notebook_function(ft.ControlEvent("","",self.content.value, ft.Text(),self.page))
+        self.page.close(self)
 
 ############################################################################################################################
 
@@ -145,17 +193,25 @@ class NoteEditor(ft.AlertDialog):
             self.multimedia,
             self.upload_button
             ], scroll=ft.ScrollMode.ALWAYS, expand=True)
-        self.actions = [ft.Button("Save", on_click=self.save), ft.Button("Cancel", on_click=self.cancel)]
+        self.actions = [ft.Button("Save", on_click=self.save),ft.Button("Save and close", on_click=self.saveAndClose), ft.Button("Close", on_click=self.cancel)]
         # Add remove button if editing
         if self.docid!= None:
             self.actions.append(ft.Button("Remove", on_click=self.remove, color=ft.Colors.RED_ACCENT))
     
-    def cancel(self, e = None):
+    def cancel(self, e : ft.ControlEvent = None):
         '''Cancel all changes to the note'''
         self.page.close(self)
     
-    def save(self, e = None):
+    def saveAndClose(self, e : ft.ControlEvent = None):
+        '''Save and close'''
+        self.save(e)
+        self.page.close(self)
+    
+    def save(self, e : ft.ControlEvent = None):
         '''Save the note'''
+        for each in self.actions:
+            each.disabled = True
+            each.update()
         current_tags = []
         for each in self.tags.controls:
             current_tags.append(each.text)
@@ -165,22 +221,24 @@ class NoteEditor(ft.AlertDialog):
         if self.docid:
             notes.update({"note_title": self.note_title.value, "note_tags": current_tags, "note_content": self.note_content.value, "note_media" : current_images,  "note_edited": date.today().strftime("%d/%m/%Y")}, doc_ids=[self.docid])
         else:
-            notes.insert({"note_title": self.note_title.value, "note_tags": current_tags, "note_content": self.note_content.value, "note_media" : current_images, "note_edited": date.today().strftime("%d/%m/%Y")})
+            self.docid = notes.insert({"note_title": self.note_title.value, "note_tags": current_tags, "note_content": self.note_content.value, "note_media" : current_images, "note_edited": date.today().strftime("%d/%m/%Y")})
         self.note_update()
-        self.page.close(self)
+        for each in self.actions:
+            each.disabled = False
+            each.update()
     
-    def remove(self, e = None):
+    def remove(self, e : ft.ControlEvent = None):
         '''Remove the note entirely'''
         notes.remove(doc_ids=[self.docid])
         self.note_update()
         self.page.close(self)
 
-    def delete_self(self, e):
+    def delete_self(self, e : ft.ControlEvent = None):
         '''Helper for images to be able to delete themselves'''
         self.multimedia.controls.remove(e.control.parent)
         self.multimedia.update()
 
-    def pickedImage(self, e : ft.FilePickerResultEvent):
+    def pickedImage(self, e : ft.FilePickerResultEvent = None):
         '''Function for when user has picked an image'''
         file = e.files[0]
         file_encoded = ""
@@ -189,11 +247,11 @@ class NoteEditor(ft.AlertDialog):
         self.multimedia.controls.append(ft.Stack([ft.Image(src_base64=file_encoded, fit=ft.ImageFit.FIT_WIDTH, width=self.page.width*0.75), ft.Button("Remove", on_click=self.delete_self)]))
         self.multimedia.update()
 
-    def promptImage(self, e):
+    def promptImage(self, e : ft.ControlEvent = None):
         '''Function to open the file dialog'''
         self.image_dialog.pick_files(dialog_title="Open Image", file_type=ft.FilePickerFileType.IMAGE, allow_multiple=False)
 
-    def addTag(self, e : ft.ControlEvent):
+    def addTag(self, e : ft.ControlEvent = None):
         '''Add tag to current note'''
         if e.data == "Create New Tag":
             self.page.open(self.new_tag)
@@ -204,7 +262,7 @@ class NoteEditor(ft.AlertDialog):
         self.tag_drop.update()
         self.tags.update()
 
-    def removeTag(self, e : ft.TapEvent):
+    def removeTag(self, e : ft.TapEvent = None):
         '''Remove tag from current note'''
         self.exclude_tags.remove(e.control.text)
         self.tags.controls.remove(e.control)
@@ -217,7 +275,7 @@ class NoteEditor(ft.AlertDialog):
 def main(page : ft.Page):
     '''Main function that runs whenever the application starts'''
     # GUI functions for later use
-    def swapTheme(e = None):
+    def swapTheme(e : ft.ControlEvent = None):
         '''Change the theme of application'''
         if page.theme_mode == ft.ThemeMode.LIGHT:
             page.theme_mode = ft.ThemeMode.DARK
@@ -238,7 +296,7 @@ def main(page : ft.Page):
             note_editor = NoteEditor(page, image_picker, tags=n_tags, note_update=updateNotes)
             page.open(note_editor)
 
-    def updateNotes(e = None):
+    def updateNotes(e : ft.ControlEvent = None):
         '''Update all notes displayed as well as the tags'''
         filer_tag = tag_search.value
         filer_text = text_search.value
@@ -264,31 +322,70 @@ def main(page : ft.Page):
             n_media = []
             for each in note["note_media"]:
                 n_media.append(ft.Image(src_base64=each, fit=ft.ImageFit.FIT_WIDTH, width=page.width*0.9))
-            n_content = [ft.Row([ft.IconButton(ft.Icons.EDIT, data=note.doc_id, on_click=editNote, tooltip="Edit Note"), ft.Text("Tags: "+", ".join(note["note_tags"]))]), ft.Row([ft.Text(note["note_content"])]), ft.Row([ft.Column(n_media)]), ft.Text("Edited: "+note["note_edited"])]
-            new_notes.append(ft.ExpansionTile(title=ft.Text(n_title), controls=n_content))
+            n_content = [ft.Row([ft.IconButton(ft.Icons.EDIT, data=note.doc_id, on_click=editNote, tooltip="Edit Note"), ft.Text("Tags: "+", ".join(note["note_tags"])), ft.Text(expand=True), ft.Text(note["note_title"], size=16),  ft.Text(expand=True), ft.Text("Edited: "+note["note_edited"])]), ft.Row([ft.Text(note["note_content"])]), ft.Row([ft.Column(n_media)])]
+            if auto_expanded:
+                new_notes.append(ft.Column(n_content+[ft.Divider()], spacing=0))
+            else:
+                new_notes.append(ft.ExpansionTile(title=ft.Text(n_title), controls=n_content))
+            
         notes_display.controls = new_notes
         notes_display.update()
         tag_search.options = getTags(special_tags)
         tag_search.update()
     
-    def editTags(e = None):
+    def editTags(e : ft.ControlEvent = None):
         '''Open tag editor'''
         tag_editor = TagsEditor(page, updateNotes)
         page.open(tag_editor)
+    
+    def switchExpansion(e  : ft.ControlEvent = None):
+        '''Switches expansion mode'''
+        global auto_expanded
+        auto_expanded = not auto_expanded
+        updateNotes(e)
+    
+    def switchNotebook(e : ft.ControlEvent = None):
+        '''Switches current notebook'''
+        if e.data == "New Notebook":
+            notebook_creator = NewNotebook(page, switchNotebook)
+            page.open(notebook_creator)
+            return
+        global db, notes, tags
+        notebooks.value = e.data
+        db.close()
+        db = TinyDB(e.data + ".db")
+        notes = db.table("Notes")
+        tags = db.table("Tags")
+        updateNotebooks(e)
+        updateNotes(e)
+
+    def updateNotebooks(e = None):
+        '''Update the dropdown of all notebooks'''
+        dbs_found = getDBs()
+        new_notebooks = ["New Notebook"] + dbs_found
+        notebooks.options.clear()
+        for each in new_notebooks:
+            notebooks.options.append(ft.DropdownOption(each))
+        notebooks.update()
+
+
     # Page setup
     page.title = "PyNotes"
     page.theme_mode = ft.ThemeMode.DARK
-    page.appbar = ft.AppBar(leading=ft.Icon(ft.Icons.INSERT_DRIVE_FILE), title=ft.Text("PyNotes"), actions=[ft.IconButton(ft.Icons.WB_SUNNY_OUTLINED, on_click=swapTheme)])
+    notebooks = ft.Dropdown(label="Notebook", value=current_db, on_change=switchNotebook)
+    page.appbar = ft.AppBar(leading=ft.Icon(ft.Icons.INSERT_DRIVE_FILE), title=ft.Text("PyNotes"), actions=[notebooks, ft.IconButton(ft.Icons.WB_SUNNY_OUTLINED, on_click=swapTheme)])
     body = ft.Column(expand=True, scroll=ft.ScrollMode.ALWAYS)
     # Magic variables
     special_tags = ["All", "Drafts"]
+    global auto_expanded
+    auto_expanded = False
         
     # Creation of components
     image_picker = ft.FilePicker()
     text_search = ft.TextField(on_submit=updateNotes, label="Search in text")
     tag_search = ft.Dropdown(editable=True, on_change=updateNotes, label="Filter by tag")
-    search_bar = ft.Row([ft.IconButton(ft.Icons.SEARCH, on_click=updateNotes), text_search, tag_search, ft.IconButton(ft.Icons.ADD, on_click=editNote, tooltip="New Note"), ft.IconButton(ft.Icons.LABEL, on_click=editTags, tooltip="Edit Tags")])
-    notes_display = ft.Column()
+    search_bar = ft.Row([ft.IconButton(ft.Icons.SEARCH, on_click=updateNotes), text_search, tag_search, ft.IconButton(ft.Icons.ADD, on_click=editNote, tooltip="New Note"), ft.IconButton(ft.Icons.LABEL, on_click=editTags, tooltip="Edit Tags"), ft.Text(expand=True), ft.IconButton(icon=ft.Icons.EXPAND, on_click=switchExpansion)])
+    notes_display = ft.Column(spacing=0)
 
     # Finalise page
     body.controls.append(search_bar)
@@ -298,7 +395,8 @@ def main(page : ft.Page):
     tag_search.options = getTags(special_tags)
     tag_search.value = "All"
     tag_search.update()
-    updateNotes(None)
+    updateNotes()
+    updateNotebooks()
 
 ############################################################################################################################
 
